@@ -39,6 +39,45 @@ expect <<'END_EXPECT'
 END_EXPECT
 ```
 
+## exp_continue
+[exp_continue wiki](https://wiki.tcl-lang.org/page/exp_continue)
+By default, exp_continue resets the timeout timer. The timer is not restarted, if exp_continue is called with the -continue_timer flag.
+
+## Получение статуса и выход с этим статусом. 
+```tcl
+spawn true
+expect eof
+catch wait result
+exit [lindex $result 3]
+```
+Exits with 0.
+
+```tcl
+spawn false
+expect eof
+catch wait result
+exit [lindex $result 3]
+```
+
+Exits with 1. 
+
+## Вывод полного буфера 
+```tcl
+#!/usr/bin/expect
+match_max 10000
+spawn dbscontrol
+expect "QUIT:"
+send "display\r"
+send "quit\r"
+set log [open "dbscontrol.general.dump" "w"]
+set NewLineChar "\r"
+expect {
+    $NewLineChar { append dbscntl $expect_out(buffer); exp_continue}
+    eof { append dbscntl $expect_out(buffer) }
+}
+puts $log $dbscntl
+```
+
 ### Intro
 
 TCL-Expect scripts are an amazingly easy way to script out laborious tasks in the shell when you need to be interactive with the console. Think of them as a "macro" or way to programmaticly step through a process you would run by hand. They are similar to shell scripts but utilize the `.tcl` extension and a different `#!` call.
