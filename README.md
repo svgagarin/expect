@@ -1,37 +1,273 @@
-# Шпаргалка по Expect
+# Шпаргалка по Expect  
 
-# Полезные ссылки
-https://tcl.tk/man/tcl8.5/TclCmd/contents.htm
-https://www.oreilly.com/library/view/exploring-expect/9781565920903/ch01.html ( 01 - 23 )
-<details>
-  <summary>Оглавление</summary>
-1  Introduction - What Is Expect?
-2  Tcl - Introduction And Overview
-3  Getting Started With Expect
-4  Glob Patterns And Other Basics
-5  Regular Expressions
-6  Patterns, Actions, And Limits
-7  Debugging Patterns And Controlling Output 
-8  Handling A Process And A User
-9  The Expect Program
-10 Handling Multiple Processes
-11 Handling Multiple Processes Simultaneously
-12 Send
-13 Spawn
-14 Signals
-15 Interact
-16 Interacting With Multiple Processes
-17 Background Processing
-18 Debugging Scripts
-19 Expect + Tk = Expectk
-20 Extended Examples
-21 Expect, C, And C++
-22 Expect As Just Another Tcl Extension 
-23 Miscellaneous
-</details>
-Regular Expressions syntax
-https://www.tcl.tk/man/tcl8.5/TclCmd/re_syntax.html#M66
-Hi! I'm your first Markdown file in **StackEdit**. If you want to learn about StackEdit, you can read me. If you want to play with Markdown, you can edit me. Once you have finished with me, you can create new files by opening the **file explorer** on the left corner of the navigation bar.
--   [Expect glob and other patterns](https://www.oreilly.com/library/view/exploring-expect/9781565920903/ch04.html)
+## Полезные ссылки  
+
+-  Книга Exploring Expect by Don Libes (рутрекер)
+-  https://tcl.tk/man/tcl8.5/TclCmd/contents.htm 
 -  [Grouping with double quotes.](https://www.tcl.tk/man/tcl8.5/tutorial/Tcl3.html)
 -  [Tcl regex syntax references.](http://www.tcl.tk/man/tcl8.5/TclCmd/re_syntax.htm#M66)
+-  [Expect glob and other patterns](https://www.oreilly.com/library/view/exploring-expect/9781565920903/ch04.html)
+-  [Regular Expressions](https://www.oreilly.com/library/view/exploring-expect/9781565920903/ch05.html)
+
+## Пример интеграции в bash
+```bash
+
+#!/bin/bash
+export pass="xxx"
+
+expect <<'END_EXPECT'
+    spawn ssh -o StrictHostKeyChecking=no shyamkarthikv@192.168.57.33
+    expect { 
+        "*?assword:" {
+            send "$env(pass)\r"
+            exp_continue
+        }
+        somePatternThatMatchesYourPrompt
+    }
+    set timeout -1  ;# in case it takes a long time to complete
+    send "sudo installer -pkg /tmp/FS-Agent/FS-Agent.pkg -target / \r"
+    expect { 
+        "*?assword:" {
+            send "$env(pass)\r"
+            exp_continue
+        }
+        somePatternThatMatchesYourPrompt
+    }
+    set timeout 2
+    send "exit\r"
+    expect eof
+END_EXPECT
+```
+
+### Intro
+
+TCL-Expect scripts are an amazingly easy way to script out laborious tasks in the shell when you need to be interactive with the console. Think of them as a "macro" or way to programmaticly step through a process you would run by hand. They are similar to shell scripts but utilize the `.tcl` extension and a different `#!` call.
+
+### Setup Your Script
+
+The first step, similar to writing a bash script, is to tell the script what it's executing under. For `expect` we use the following:
+
+```
+#!/usr/bin/expect
+```
+
+You also must place `interact` at the end, so your script looks like this:
+
+```
+#!/usr/bin/expect
+
+
+
+... All your codez...
+
+
+
+interact
+```
+
+
+### Puts & Output
+
+Instead of the `echo` command, expect uses puts, which is pretty 1:1...
+
+```
+puts "I am performing a command..."
+```
+
+Would do exactly what you think it would, just echo out the text.
+
+Now, the script will also show you the commands being performed. Good for testing, but maybe not required in "production" or daily-use. In that case you can just show the `puts` text via:
+
+```
+log_user 0
+```
+
+Which suppresses the commands and responses, showing only what you output via `puts`. You can always turn it back on later via:
+
+```
+log_user 1
+```
+
+If for example you wanted to show exactly what is coming back to the console.
+
+
+### Variables
+
+Variables are very simple, just use `set {name} {value}`, for example:
+
+```
+set a "apple"
+set b "banana"
+set c "cantalope"
+```
+
+Referencing variables is done by simply appending `$` to the name - so `$a` would contain `apple`.
+
+
+### Arguments
+
+If you want to set a variable by passing in an argument simply use the following:
+
+```
+set user [lindex $argv 0]
+set password [lindex $argv 1]
+```
+
+Then, when running the script I could supply the varaible content via:
+
+```
+./myscript.tcl myuser mypassword
+```
+
+### Spawn & Send
+
+You can start a process with the `spawn` command. For example, `ssh` or `scp` are great examples:
+
+```
+set user "myuser"
+set server "myserver.com"
+
+spawn ssh "$user\@server"
+```
+
+The above would spawn the ssh process and submit the user and server, so essentially like entering `ssh myuser@myserver.com` in the console.
+
+The `send` command allows you to send something to the console. For example, a password:
+
+```
+set password [lindex $argv 0]
+set app [lindex $argv 1]
+
+spawn sudo "apt-get install $app"
+
+expect "assword"
+
+send "$password\r"
+```
+
+The above would allow you to pass in your sudo password and the name of an application to install from apt, then wait for the password prompt and send it. No `assword` is not a mispelling, let's look at that `expect` statement...
+
+### Expect
+
+The `expect` statement is where the magic happens. Let's start with the basic, say you run a command and just want to wait for the console to return to prompt before it moves on...
+
+```
+spawn apt-get "update"
+
+expect "$"
+
+# Move on to the next thing...
+```
+
+Very simple stuff, you spawn `apt-get` then just wait for the `$` (or prompt).
+
+The expect statement looks for a "close match" so in the above example your prompt (depending on your shell) could be something like `root@server $~`. The expect would find that `$` and know that it's good to move forward.
+
+So, how about more difficult cases, where you may not have a finite expect. Let's take a look at ssh again:
+
+```
+spawn ssh "$user/@server"
+
+expect {
+    "assword" {
+        send "$password\r"
+    }
+    "yes/no" {
+        send "yes\r"
+    }
+}
+
+# NOW we can move on...
+```
+
+In the above example we could encounter two results. The first is that I have connected to the server previously and am prompted with `Password:` or `Enter your password for server:` (or something similar). The looseness of the `assword` define covers both cases and submits the `$password` variable. The `"yes/no"` would be if you're prompted to accept the remote host's key - it will submit `yes` for you, then wait for the password-prompt and handle that for you as well.
+
+This can be adapted to different prompts as well - you could do something like the following to account for different styles of prompts:
+
+```
+expect {
+    "> " { }
+    "$ " { }
+}
+```
+
+This can be built-upon more to really close the error-gap:
+
+```
+expect {
+    "> " { }
+    "$ " { }
+    "assword: " { 
+        send "$password\n" 
+        expect {
+            "> " { }
+            "$ " { }
+        }
+    }
+    "(yes/no)? " { 
+        send "yes\n"
+        expect {
+          "> " { }
+          "$ " { }
+        }
+    }
+    default {
+        send_user "Login failed\n"
+        exit
+    }
+}
+```
+
+### Conditionals
+
+If-Statments are extremely simple, and an example should be clear enough to make the point:
+
+```
+if { $a == "soup" } {
+    puts "You have soup!"
+else {
+    puts "No soup for you!"
+}
+```
+
+### Looping
+
+There are several methods for looping. I tend to take the `while` approach when possible:
+
+```
+set count 10;
+while {$count > 0 } {
+    puts "$count\n"
+    set count [expr $count-1];
+}
+```
+
+The above will simply loop backwards from `10` and echo-out the number.
+
+### Functions & Proc
+
+What about code re-use? Oh yeah - expect has that:
+
+```
+proc do_something { a b c } {
+    puts "You should buy some $a, $b, and $c!\n"
+}
+```
+
+Can then be called with:
+
+```
+set running [do_something "apples" "bananas" "cantalopes"]
+```
+
+Which would output:
+
+```
+You should buy some apples, bananas, and cantalopes!"
+```
+
+### Conclusion
+
+The above describes the basics of expect scripting. It's really simple when you think about it in terms of taking actions you would perform by hand and converting them into a scripted set of actions.
+
+I decided not to give some big example but rather cover the core concepts. I did this because when I got started the examples I saw just threw me off and once I spent some time digging to understand the fundamentals I quickly found myself writing the scripts with ease. Hope this helps you do the same!
