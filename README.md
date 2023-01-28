@@ -65,7 +65,7 @@ set login               "admin+cte170w300h"
 set IPaddress           [lindex $argv 0]
 
 # lindex список индекс
-# 	Возвращяет элемент списка на позиции индекс. Нумерация начинается с 0,последний элемент можно указывать индексом end.
+# 	Возвращает элемент списка на позиции индекс. Нумерация начинается с 0,последний элемент можно указывать индексом end.
 # llength список
 #  	Возвращает количество элементов в списке.
 
@@ -114,6 +114,7 @@ expect {
         exp_continue
     }
     -nocase "Host key verification failed" {
+        # Если ключ сменился, генерируем новый
         # exec ssh-keygen -R $IPaddress
         # connectssh $login $IPaddress
         # exp_continue
@@ -147,6 +148,42 @@ expect {
 set timeout 5
 puts "Connected"
 
+send -- "quit\r"
+
+expect eof
+exit 0
+```
+## SSH connect сокращенная версия
+```tcl
+
+exp_internal            0
+log_user                0
+set passw_retry_count   3
+set prompt              "(] > )$"
+set login               "admin+cte170w300h"
+set IPaddress           [lindex $argv 0]
+
+if { [llength $argv] != 1 } { send_user "Usage:   $argv0 <mikrotik ip-address> \n"; exit 1 }
+
+set passfile "/usr/home/sergey/cg_passwords/mikrotik.txt"
+if { [file readable $passfile] } { gets [open "$passfile" r] password } else { send_user "ERROR: The file $passfile does not exist or is not readable\n"; exit 1 }
+
+set timeout 10
+spawn ssh -o "ConnectTimeout=6" -o "StrictHostKeyChecking=no" -o "UserKnownHostsFile=/dev/null" $login@$IPaddress
+
+
+expect {
+    timeout { send_user "ERROR: Failed to get password prompt $IPaddress\n"; exit 1 }
+    eof { catch wait result ; send_user "ERROR: connection to $IPaddress failed EOF: exit code = [lindex $result 3]\n"; exit [lindex $result 3] }
+    -nocase "yes/no" { send "yes\r"; exp_continue }
+    -nocase "Host key verification failed" { send_user "ERROR: SSH connection to $IPaddress failed.\nHost key verification failed.\nUse ssh-keygen -R $IPaddress to create SSH key pairs\n"; exit 1 }
+    -nocase -re "fail|incorrect|denied|refuse" { send_user "ERROR: Login to $IPaddress failed. The username or password is incorrect\n"; exit 1 }
+    -nocase "password:" { if { [incr passw_retry_count -1] == 0 } { send_user "ERROR: Login to $IPaddress failed. The username or password is incorrect\n"; exit 1 } else { send -- "$password\n"; exp_continue } }
+    -re $prompt { }
+}
+
+set timeout 5
+puts "Connected"
 send -- "quit\r"
 
 expect eof
