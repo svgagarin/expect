@@ -8,6 +8,7 @@
 -  [Tcl regex syntax references.](http://www.tcl.tk/man/tcl8.5/TclCmd/re_syntax.htm#M66)
 -  [Expect glob and other patterns](https://www.oreilly.com/library/view/exploring-expect/9781565920903/ch04.html)
 -  [Regular Expressions](https://www.oreilly.com/library/view/exploring-expect/9781565920903/ch05.html)
+-  [Уроки Tcl](http://tclstudy.narod.ru/tcl/index.html)
 
 ## Пример интеграции в bash
 ```bash
@@ -37,6 +38,119 @@ expect <<'END_EXPECT'
     send "exit\r"
     expect eof
 END_EXPECT
+```
+
+## ssh login
+```tcl
+#!/usr/local/bin/expect -f
+
+# debug
+# exp_internal [-info] [-f file] value Управление выводом диагностической информации о полученных данных и сопоставлении с образцом. Отображение на стандартный вывод включено, если числовое значение параметра не равно 0, и отключено, если оно равно 0.
+# Вывод можно отправить в файл с помощью параметра -f и аргумента имени файла.
+# Опция -info вызывает отображение текущего состояния диагностического вывода.
+# log_user -info|0|1
+# Управление записью диалога send/expect в стандартный вывод. Аргумент 1 включает ведение журнала, а 0 отключает его. Без аргументов или опции -info отображает текущую настройку.
+exp_internal            0
+log_user                0
+# Счётчики для повторных попыток (подключение ssh, пароль, ожидание подключения клиента л2тп на микротик)
+set connect_counter     3
+set passw_retry_count   3
+# Логи
+# set directory           "/usr/local/www/cg/bash_scripts"
+# log_file -a             $directory/expect_$IPaddress.log
+# prompt консоли. Варианты "#", "{[#>$] }" 
+set prompt              "(] > )$"
+# устранение проблем для экспекта с специмволами микротика https://help.mikrotik.com/docs/display/ROS/Command+Line+Interface
+set login               "admin+cte170w300h"
+set IPaddress           [lindex $argv 0]
+
+# lindex список индекс
+# 	Возвращяет элемент списка на позиции индекс. Нумерация начинается с 0,последний элемент можно указывать индексом end.
+# llength список
+#  	Возвращает количество элементов в списке.
+
+# Argc - содержит счетчик количества аргументов arg (если ни одного, то 0), исключая имя файла со скриптом.
+# Argv - содержит список Tcl, элементами которого являются аргументы arg, в порядке их следования, или нулевую строку, если нет ни одного аргумента.
+# argv0 - содержит fileName, если он был задан. В обратном случае содержит имя, при помощи которого был вызван tclsh.
+
+if { [llength $argv] != 1 } {    
+    send_user "Usage:   $argv0 <mikrotik ip-address> \n"
+    exit 1
+}
+
+set passfile "/usr/home/sergey/cg_passwords/switch.txt"
+
+if { [file readable $passfile] } {
+    gets [open "$passfile" r] password
+} else {
+    send_user "ERROR: The file $passfile does not exist or is not readable\n"; exit 1
+}
+
+# proc connectssh {user host} {
+#     global spawn_id
+#     spawn ssh -q -o "ConnectTimeout=5" -o "StrictHostKeyChecking=no" -o "UserKnownHostsFile=/dev/null" $user@$host
+# }
+
+set timeout 10
+
+# -q может создавать проблемы для expect, выдавая лишнюю информацию, но и глушить ошибки - неправильный пароль, неверный ключ ssh и т.д.
+# spawn ssh -q -o "ConnectTimeout=5" -o "StrictHostKeyChecking=no" -o "UserKnownHostsFile=/dev/null" $login@$IPaddress
+spawn ssh -o "ConnectTimeout=6" -o "StrictHostKeyChecking=no" -o "UserKnownHostsFile=/dev/null" $login@$IPaddress
+
+expect {
+    timeout { 
+        send_user "ERROR: Failed to get password prompt $IPaddress\n"
+        exit 1
+    }
+    eof {
+        # В некоторых сценариях catch wait result может вешать скрипт полностью. Полезность статуса сомнительна
+        catch wait result
+        send_user "ERROR: connection to $IPaddress failed EOF: exit code = [lindex $result 3]\n"
+        exit [lindex $result 3]
+    }
+    # ssh 
+    -nocase "yes/no" {
+        send "yes\r"
+        exp_continue
+    }
+    -nocase "Host key verification failed" {
+        # exec ssh-keygen -R $IPaddress
+        # connectssh $login $IPaddress
+        # exp_continue
+        send_user "ERROR: SSH connection to $IPaddress failed.\nHost key verification failed.\nUse ssh-keygen -R $IPaddress to create SSH key pairs\n"
+        exit 1
+    }
+    # Это выше логина и пароля, иначе уйдет в цикл
+    -nocase -re "fail|incorrect|denied|refuse" {
+        send_user "ERROR: Login to $IPaddress failed. The username or password is incorrect\n"
+        exit 1
+    }
+    # Если требуется ввод логина 
+    -nocase "username:" {
+        send -- "$login\r"
+        exp_continue
+    }
+    -nocase "password:" {
+        # Защита от ухода в цикл, если используется опция ssh -q или fail|incorrect|denied|refuse не сработал
+        if { [incr passw_retry_count -1] == 0 } {
+            send_user "ERROR: Login to $IPaddress failed. The username or password is incorrect\n"
+            exit 1
+        } else {
+            send -- "$password\n"
+            exp_continue
+        }
+    }
+    -re $prompt {
+    }
+}
+
+set timeout 5
+puts "Connected"
+
+send -- "quit\r"
+
+expect eof
+exit 0
 ```
 
 ## exp_continue
