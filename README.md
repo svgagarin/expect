@@ -229,6 +229,14 @@ expect {
 puts $log $dbscntl
 ```
 
+## Время работы скрипта
+```tcl
+# Точка отсчёта
+set TIME_start [clock clicks -milliseconds]
+# Вывод результата в мс
+send_user "[expr ([clock clicks -milliseconds] - $TIME_start)/1000.000] ms"
+```
+
 ### Intro
 
 TCL-Expect scripts are an amazingly easy way to script out laborious tasks in the shell when you need to be interactive with the console. Think of them as a "macro" or way to programmaticly step through a process you would run by hand. They are similar to shell scripts but utilize the `.tcl` extension and a different `#!` call.
